@@ -1,24 +1,27 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, Dimensions, PanResponder, Animated } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, BrandColors } from '@/constants/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useState } from 'react';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useState, useRef } from 'react';
 
 const { width, height } = Dimensions.get('window');
 
 export default function NavigationScreen() {
   const [selectedFloor, setSelectedFloor] = useState<'ground' | 'first' | 'second'>('ground');
+  const [selectedLocation, setSelectedLocation] = useState<number | null>(null);
+  const scale = useRef(new Animated.Value(1)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
   
   const locations = [
-    { id: 1, name: 'Main Hall', floor: 'Ground Floor', icon: 'building.2', lat: 48.1500, lng: 11.5700 },
-    { id: 2, name: 'Workshop Room A', floor: '1st Floor', icon: 'book', lat: 48.1501, lng: 11.5701 },
-    { id: 3, name: 'Workshop Room B', floor: '1st Floor', icon: 'book', lat: 48.1502, lng: 11.5702 },
-    { id: 4, name: 'Cafeteria', floor: 'Ground Floor', icon: 'cup.and.saucer', lat: 48.1499, lng: 11.5699 },
-    { id: 5, name: 'Restrooms', floor: 'All Floors', icon: 'figure.walk', lat: 48.1503, lng: 11.5703 },
-    { id: 6, name: 'Networking Area', floor: '2nd Floor', icon: 'person.2', lat: 48.1504, lng: 11.5704 },
+    { id: 1, name: 'Main Hall', floor: 'Ground Floor', icon: 'building.2', x: 50, y: 30 },
+    { id: 2, name: 'Workshop Room A', floor: '1st Floor', icon: 'book', x: 30, y: 50 },
+    { id: 3, name: 'Workshop Room B', floor: '1st Floor', icon: 'book', x: 70, y: 50 },
+    { id: 4, name: 'Cafeteria', floor: 'Ground Floor', icon: 'cup.and.saucer', x: 50, y: 70 },
+    { id: 5, name: 'Restrooms', floor: 'All Floors', icon: 'figure.walk', x: 20, y: 40 },
+    { id: 6, name: 'Networking Area', floor: '2nd Floor', icon: 'person.2', x: 80, y: 60 },
   ];
 
   const filteredLocations = locations.filter(loc => {
@@ -26,6 +29,25 @@ export default function NavigationScreen() {
     if (selectedFloor === 'first') return loc.floor === '1st Floor' || loc.floor === 'All Floors';
     return loc.floor === '2nd Floor' || loc.floor === 'All Floors';
   });
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        translateX.setOffset(translateX._value);
+        translateY.setOffset(translateY._value);
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: translateX, dy: translateY }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        translateX.flattenOffset();
+        translateY.flattenOffset();
+      },
+    })
+  ).current;
 
   return (
     <ThemedView style={styles.container}>
@@ -38,46 +60,94 @@ export default function NavigationScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Interactive Map */}
+        {/* Interactive Floor Plan */}
         <View style={styles.mapContainer}>
-          <MapView
-            provider={PROVIDER_GOOGLE}
-            style={styles.map}
-            initialRegion={{
-              latitude: 48.1500,
-              longitude: 11.5700,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            mapType="standard"
-            customMapStyle={[
+          <Animated.View
+            style={[
+              styles.floorPlan,
               {
-                elementType: 'geometry',
-                stylers: [{ color: BrandColors.darkBackground }],
-              },
-              {
-                elementType: 'labels.text.stroke',
-                stylers: [{ color: BrandColors.darkBackground }],
-              },
-              {
-                elementType: 'labels.text.fill',
-                stylers: [{ color: BrandColors.white }],
+                transform: [
+                  { translateX },
+                  { translateY },
+                  { scale },
+                ],
               },
             ]}
+            {...panResponder.panHandlers}
           >
+            {/* Floor plan background grid */}
+            <View style={styles.floorPlanGrid}>
+              {Array.from({ length: 10 }).map((_, i) => (
+                <View key={`h-${i}`} style={[styles.gridLine, styles.gridLineHorizontal, { top: `${i * 10}%` }]} />
+              ))}
+              {Array.from({ length: 10 }).map((_, i) => (
+                <View key={`v-${i}`} style={[styles.gridLine, styles.gridLineVertical, { left: `${i * 10}%` }]} />
+              ))}
+            </View>
+            
+            {/* Location markers */}
             {filteredLocations.map((location) => (
-              <Marker
+              <TouchableOpacity
                 key={location.id}
-                coordinate={{ latitude: location.lat, longitude: location.lng }}
-                title={location.name}
-                description={location.floor}
+                style={[
+                  styles.mapMarker,
+                  {
+                    left: `${location.x}%`,
+                    top: `${location.y}%`,
+                  },
+                  selectedLocation === location.id && styles.mapMarkerSelected,
+                ]}
+                onPress={() => setSelectedLocation(selectedLocation === location.id ? null : location.id)}
               >
                 <View style={styles.markerContainer}>
-                  <IconSymbol size={24} name={location.icon as any} color={BrandColors.blueAccent} />
+                  <IconSymbol size={20} name={location.icon as any} color={BrandColors.blueAccent} />
                 </View>
-              </Marker>
+                {selectedLocation === location.id && (
+                  <View style={styles.markerLabel}>
+                    <ThemedText style={styles.markerLabelText}>{location.name}</ThemedText>
+                  </View>
+                )}
+              </TouchableOpacity>
             ))}
-          </MapView>
+          </Animated.View>
+          
+          {/* Zoom controls */}
+          <View style={styles.zoomControls}>
+            <TouchableOpacity
+              style={styles.zoomButton}
+              onPress={() => {
+                Animated.spring(scale, {
+                  toValue: scale._value * 1.2,
+                  useNativeDriver: false,
+                }).start();
+              }}
+            >
+              <IconSymbol size={20} name="plus" color={BrandColors.white} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.zoomButton}
+              onPress={() => {
+                Animated.spring(scale, {
+                  toValue: scale._value * 0.8,
+                  useNativeDriver: false,
+                }).start();
+              }}
+            >
+              <IconSymbol size={20} name="minus" color={BrandColors.white} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.zoomButton}
+              onPress={() => {
+                Animated.parallel([
+                  Animated.spring(scale, { toValue: 1, useNativeDriver: false }),
+                  Animated.spring(translateX, { toValue: 0, useNativeDriver: false }),
+                  Animated.spring(translateY, { toValue: 0, useNativeDriver: false }),
+                ]).start();
+              }}
+            >
+              <IconSymbol size={20} name="arrow.counterclockwise" color={BrandColors.white} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Floor Selector */}
@@ -170,16 +240,82 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.cardBackground,
+    position: 'relative',
   },
-  map: {
+  floorPlan: {
+    width: '200%',
+    height: '200%',
+    position: 'relative',
+  },
+  floorPlanGrid: {
+    position: 'absolute',
     width: '100%',
     height: '100%',
+  },
+  gridLine: {
+    position: 'absolute',
+    backgroundColor: Colors.dark.border + '40',
+  },
+  gridLineHorizontal: {
+    width: '100%',
+    height: 1,
+  },
+  gridLineVertical: {
+    height: '100%',
+    width: 1,
+  },
+  mapMarker: {
+    position: 'absolute',
+    transform: [{ translateX: -12 }, { translateY: -12 }],
+  },
+  mapMarkerSelected: {
+    zIndex: 10,
   },
   markerContainer: {
     backgroundColor: BrandColors.darkBackground,
     borderRadius: 20,
     padding: 8,
     borderWidth: 2,
+    borderColor: BrandColors.blueAccent,
+    shadowColor: BrandColors.blueAccent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  markerLabel: {
+    position: 'absolute',
+    top: -30,
+    left: -40,
+    backgroundColor: BrandColors.blueAccent,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  markerLabelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+  },
+  zoomControls: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    flexDirection: 'column',
+    gap: 8,
+  },
+  zoomButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: BrandColors.blueAccent + 'CC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
     borderColor: BrandColors.blueAccent,
   },
   headerTitle: {

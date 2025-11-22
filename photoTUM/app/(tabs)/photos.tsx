@@ -5,7 +5,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors, BrandColors } from '@/constants/theme';
 import { useState, useEffect, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
 import * as FileSystem from 'expo-file-system';
@@ -341,7 +341,7 @@ export default function PhotosScreen() {
             <CameraView
               ref={cameraRef}
               style={styles.camera}
-              facing={CameraType.back}
+              facing="back"
             >
               <View style={styles.cameraControls}>
                 <TouchableOpacity
