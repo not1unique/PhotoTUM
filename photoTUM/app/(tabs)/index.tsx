@@ -7,9 +7,11 @@ import { commonStyles } from '@/styles/common';
 import { addTodo, deleteTodo, getTodosAsync, TODO_COLORS, toggleTodo, type Todo } from '@/utils/todoStorage';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Dimensions, KeyboardAvoidingView, Modal, PanResponder, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
@@ -28,6 +30,54 @@ export default function HomeScreen() {
   const [newTodoText, setNewTodoText] = useState('');
   const [selectedColor, setSelectedColor] = useState(TODO_COLORS[0]);
   const [pendingRemovalIds, setPendingRemovalIds] = useState<Set<number>>(new Set());
+
+  // Overlay states
+  const [showWelcomeOverlay, setShowWelcomeOverlay] = useState(false);
+  const [showProjectOverlay, setShowProjectOverlay] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  
+  // Project submission form state
+  const [projectName, setProjectName] = useState('');
+  const [teamName, setTeamName] = useState('');
+  const [teamMembers, setTeamMembers] = useState<string[]>(['']);
+  const [newMemberName, setNewMemberName] = useState('');
+  const [selectedChallenge, setSelectedChallenge] = useState('');
+  const [aboutProject, setAboutProject] = useState('');
+  const [technologies, setTechnologies] = useState('');
+  const [gitlabRepo, setGitlabRepo] = useState('');
+  
+  // Swipe down gesture for project overlay
+  const panY = useRef(new Animated.Value(0)).current;
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dy) > 5 && gestureState.dy > 0;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          panY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100) {
+          Animated.timing(panY, {
+            toValue: Dimensions.get('window').height,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            setShowProjectOverlay(false);
+            panY.setValue(0);
+          });
+        } else {
+          Animated.spring(panY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     const calculateTimeLeft = () => {
@@ -157,6 +207,10 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Countdown Section */}
+        <TouchableOpacity 
+          activeOpacity={0.9}
+          onPress={() => setShowWelcomeOverlay(true)}
+        >
         <BlurView intensity={80} tint="dark" style={[styles.card, styles.countdownCard]}>
           <ThemedText style={styles.sectionTitle}>Project Submission</ThemedText>
           <View style={styles.countdown}>
@@ -181,6 +235,7 @@ export default function HomeScreen() {
             </View>
           </View>
         </BlurView>
+        </TouchableOpacity>
 
         {/* Upcoming Events Section */}
         <BlurView intensity={80} tint="dark" style={styles.card}>
@@ -242,7 +297,7 @@ export default function HomeScreen() {
               ))
             );
           })()}
-        </BlurView>
+          </BlurView>
       </ScrollView>
 
       {/* Add Todo Modal */}
@@ -312,14 +367,323 @@ export default function HomeScreen() {
               >
                 <ThemedText style={styles.modalButtonText}>Add Task</ThemedText>
               </TouchableOpacity>
-            </BlurView>
+          </BlurView>
           </ScrollView>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Welcome Overlay with Map and QR Code */}
+      <Modal
+        visible={showWelcomeOverlay}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowWelcomeOverlay(false);
+          setMapLoaded(false);
+        }}
+      >
+        <View style={styles.overlayContainer}>
+          <BlurView intensity={100} tint="dark" style={styles.overlayContent}>
+            {/* Welcome Header */}
+            <View style={styles.welcomeHeader}>
+              <ThemedText style={styles.welcomeTitle}>
+                Welcome Jonathan to <ThemedText style={styles.welcomeTitleHighlight}>HackaTUM X</ThemedText>
+              </ThemedText>
+            </View>
+
+            {/* Map Section */}
+            <View style={styles.mapSection}>
+              {!mapLoaded && (
+                <View style={styles.mapLoadingOverlay}>
+                  <ActivityIndicator size="large" color={BrandColors.blueAccent} />
+                  <ThemedText style={styles.mapLoadingText}>Loading map...</ThemedText>
+                </View>
+              )}
+              <WebView
+                source={{ html: getMapHTML() }}
+                style={styles.mapWebView}
+                onMessage={(event) => {
+                  if (event.nativeEvent.data === 'mapLoaded') {
+                    setMapLoaded(true);
+                  }
+                }}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                startInLoadingState={true}
+                scalesPageToFit={true}
+              />
+            </View>
+
+            {/* QR Code Section */}
+            <TouchableOpacity
+              style={styles.qrCodeSection}
+              onPress={() => {
+                setShowWelcomeOverlay(false);
+                setMapLoaded(false);
+                setShowProjectOverlay(true);
+              }}
+              activeOpacity={0.9}
+            >
+              <QRCode
+                value="https://hackatum2025.phototum.app"
+                size={Dimensions.get('window').width * 0.6}
+                color={BrandColors.white}
+                backgroundColor="transparent"
+              />
+            </TouchableOpacity>
+          </BlurView>
+        </View>
+      </Modal>
+
+      {/* Project Submission Overlay */}
+      <Modal
+        visible={showProjectOverlay}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setShowProjectOverlay(false);
+          panY.setValue(0);
+        }}
+      >
+        <Animated.View
+          style={[
+            styles.projectOverlayContainer,
+            {
+              transform: [{ translateY: panY }],
+            },
+          ]}
+          {...panResponder.panHandlers}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.projectOverlayKeyboardView}
+          >
+            <View style={styles.projectOverlayWrapper}>
+              <BlurView intensity={100} tint="dark" style={styles.projectOverlayContent}>
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => {
+                setShowProjectOverlay(false);
+                panY.setValue(0);
+              }}
+            >
+              <IconSymbol size={28} name="xmark.circle.fill" color={BrandColors.white} />
+            </TouchableOpacity>
+
+            {/* Swipe Indicator */}
+            <View style={styles.swipeIndicator} />
+
+            <ScrollView
+              style={styles.projectScrollView}
+              contentContainerStyle={styles.projectScrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <ThemedText style={styles.projectTitle}>Project Submission</ThemedText>
+
+              {/* Project Name */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>Project Name</ThemedText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Enter project name..."
+                  placeholderTextColor={Colors.dark.icon}
+                  value={projectName}
+                  onChangeText={setProjectName}
+                />
+              </View>
+
+              {/* Team Name */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>Team Name</ThemedText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="Enter team name..."
+                  placeholderTextColor={Colors.dark.icon}
+                  value={teamName}
+                  onChangeText={setTeamName}
+                />
+              </View>
+
+              {/* Team Members */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>Team Members</ThemedText>
+                {teamMembers.map((member, index) => (
+                  <View key={index} style={styles.memberRow}>
+                    <TextInput
+                      style={[styles.formInput, styles.memberInput]}
+                      placeholder={`Member ${index + 1}...`}
+                      placeholderTextColor={Colors.dark.icon}
+                      value={member}
+                      onChangeText={(text) => {
+                        const newMembers = [...teamMembers];
+                        newMembers[index] = text;
+                        setTeamMembers(newMembers);
+                      }}
+                    />
+                    {teamMembers.length > 1 && (
+                      <TouchableOpacity
+                        style={styles.removeMemberButton}
+                        onPress={() => {
+                          const newMembers = teamMembers.filter((_, i) => i !== index);
+                          setTeamMembers(newMembers);
+                        }}
+                      >
+                        <IconSymbol size={20} name="minus.circle.fill" color={BrandColors.blueAccent} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+                <TouchableOpacity
+                  style={styles.addMemberButton}
+                  onPress={() => setTeamMembers([...teamMembers, ''])}
+                >
+                  <IconSymbol size={20} name="plus.circle" color={BrandColors.blueAccent} />
+                  <ThemedText style={styles.addMemberText}>Add Team Member</ThemedText>
+                </TouchableOpacity>
+              </View>
+
+              {/* Challenge Selection */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>Select Challenge</ThemedText>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.challengeScroll}>
+                  {['AI & ML', 'Web3', 'Sustainability', 'Healthcare', 'Education', 'FinTech'].map((challenge) => (
+                    <TouchableOpacity
+                      key={challenge}
+                      style={[
+                        styles.challengeOption,
+                        selectedChallenge === challenge && styles.challengeOptionSelected,
+                      ]}
+                      onPress={() => setSelectedChallenge(challenge)}
+                    >
+                      <ThemedText
+                        style={[
+                          styles.challengeText,
+                          selectedChallenge === challenge && styles.challengeTextSelected,
+                        ]}
+                      >
+                        {challenge}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* About the Project */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>About the Project</ThemedText>
+                <TextInput
+                  style={[styles.formInput, styles.textAreaInput]}
+                  placeholder="Describe your project..."
+                  placeholderTextColor={Colors.dark.icon}
+                  value={aboutProject}
+                  onChangeText={setAboutProject}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              {/* Technologies Used */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>Technologies Used</ThemedText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="e.g., React Native, Python, TensorFlow..."
+                  placeholderTextColor={Colors.dark.icon}
+                  value={technologies}
+                  onChangeText={setTechnologies}
+                />
+              </View>
+
+              {/* GitLab Repo Link */}
+              <View style={styles.formSection}>
+                <ThemedText style={styles.formLabel}>GitLab Repo Link</ThemedText>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="https://gitlab.com/..."
+                  placeholderTextColor={Colors.dark.icon}
+                  value={gitlabRepo}
+                  onChangeText={setGitlabRepo}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                />
+              </View>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  (!projectName.trim() || !teamName.trim()) && styles.submitButtonDisabled,
+                ]}
+                onPress={() => {
+                  Alert.alert('Success', 'Project submitted successfully!');
+                  setShowProjectOverlay(false);
+                  // Reset form
+                  setProjectName('');
+                  setTeamName('');
+                  setTeamMembers(['']);
+                  setSelectedChallenge('');
+                  setAboutProject('');
+                  setTechnologies('');
+                  setGitlabRepo('');
+                }}
+                disabled={!projectName.trim() || !teamName.trim()}
+              >
+                <ThemedText style={styles.submitButtonText}>Submit Project</ThemedText>
+              </TouchableOpacity>
+            </ScrollView>
+          </BlurView>
+            </View>
+          </KeyboardAvoidingView>
+        </Animated.View>
       </Modal>
       </SafeAreaView>
     </ThemedView>
   );
 }
+
+// Map HTML generator (same as navigation tab)
+const MI_BUILDING_LAT = 48.2625;
+const MI_BUILDING_LON = 11.6708;
+const MI_BUILDING_NAME = 'Mathematics/Informatics Building';
+const MI_BUILDING_ADDRESS = 'Boltzmannstraße 3, 85748 Garching';
+
+const getMapHTML = () => {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { width: 100%; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        var map = L.map('map').setView([${MI_BUILDING_LAT}, ${MI_BUILDING_LON}], 17);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+        
+        var marker = L.marker([${MI_BUILDING_LAT}, ${MI_BUILDING_LON}]).addTo(map);
+        marker.bindPopup('<b>${MI_BUILDING_NAME}</b><br>${MI_BUILDING_ADDRESS}').openPopup();
+        
+        // Notify React Native that map is loaded
+        window.ReactNativeWebView.postMessage('mapLoaded');
+    </script>
+</body>
+</html>
+  `;
+};
 
 const styles = StyleSheet.create({
   headerLeft: {
@@ -564,6 +928,222 @@ const styles = StyleSheet.create({
   },
   modalButtonText: {
     fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+  },
+  // Welcome Overlay Styles
+  overlayContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  overlayContent: {
+    flex: 1,
+    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+  },
+  welcomeHeader: {
+    marginBottom: 20,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+    textAlign: 'center',
+    lineHeight: 86,
+  },
+  welcomeTitleHighlight: {
+    fontSize: 64,
+    fontWeight: 'bold',
+    fontFamily: 'Orbitron',
+    color: BrandColors.blueAccent,
+    lineHeight: 56,
+  },
+  mapSection: {
+    height: Dimensions.get('window').height * 0.3,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    position: 'relative',
+  },
+  mapWebView: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  mapLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.dark.cardBackground,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  mapLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontFamily: 'Orbitron',
+    color: Colors.dark.icon,
+  },
+  qrCodeSection: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  // Project Overlay Styles
+  projectOverlayContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    paddingTop: Platform.OS === 'ios' ? 60 : 48,
+  },
+  projectOverlayKeyboardView: {
+    flex: 1,
+  },
+  projectOverlayWrapper: {
+    flex: 1,
+    borderTopLeftRadius: Platform.OS === 'ios' ? 44 : 34,
+    borderTopRightRadius: Platform.OS === 'ios' ? 44 : 34,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(20, 20, 30, 0.98)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderBottomWidth: 0,
+  },
+  projectOverlayContent: {
+    flex: 1,
+    paddingTop: Platform.OS === 'ios' ? 32 : 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    overflow: 'hidden',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 32 : 20,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+  },
+  swipeIndicator: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.dark.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  projectScrollView: {
+    flex: 1,
+  },
+  projectScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  projectTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  formSection: {
+    marginBottom: 24,
+  },
+  formLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+    marginBottom: 12,
+  },
+  formInput: {
+    backgroundColor: Colors.dark.cardBackground,
+    borderRadius: 12,
+    padding: 16,
+    color: BrandColors.white,
+    fontFamily: 'Orbitron',
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  textAreaInput: {
+    minHeight: 100,
+    maxHeight: 150,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  memberInput: {
+    flex: 1,
+    marginRight: 12,
+  },
+  removeMemberButton: {
+    padding: 8,
+  },
+  addMemberButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    backgroundColor: Colors.dark.cardBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    marginTop: 8,
+  },
+  addMemberText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontFamily: 'Orbitron',
+    color: BrandColors.blueAccent,
+  },
+  challengeScroll: {
+    flexDirection: 'row',
+  },
+  challengeOption: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    backgroundColor: Colors.dark.cardBackground,
+    borderWidth: 2,
+    borderColor: Colors.dark.border,
+    marginRight: 12,
+  },
+  challengeOptionSelected: {
+    borderColor: BrandColors.blueAccent,
+    backgroundColor: 'rgba(77, 111, 173, 0.2)',
+  },
+  challengeText: {
+    fontSize: 14,
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+  },
+  challengeTextSelected: {
+    color: BrandColors.blueAccent,
+    fontWeight: '600',
+  },
+  submitButton: {
+    backgroundColor: BrandColors.blueAccent,
+    borderRadius: 12,
+    padding: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  submitButtonDisabled: {
+    opacity: 0.5,
+  },
+  submitButtonText: {
+    fontSize: 18,
     fontWeight: '600',
     fontFamily: 'Orbitron',
     color: BrandColors.white,

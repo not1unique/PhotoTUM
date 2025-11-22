@@ -186,8 +186,19 @@ export default function PhotosScreen() {
     if (!cameraRef.current) return;
 
     try {
-      const photo = await cameraRef.current.takePictureAsync();
-      if (!photo) return;
+      // For face recognition, use higher quality for better accuracy
+      const options = cameraMode === 'find-me' 
+        ? { quality: 0.9, base64: false } 
+        : { quality: 0.7, base64: false };
+      
+      console.log('Taking photo with options:', options, 'Mode:', cameraMode);
+      const photo = await cameraRef.current.takePictureAsync(options);
+      if (!photo) {
+        console.error('Photo capture returned null');
+        return;
+      }
+
+      console.log('Photo captured, URI:', photo.uri);
 
       if (cameraMode === 'find-me') {
         // Handle Face Search
@@ -212,6 +223,7 @@ export default function PhotosScreen() {
   };
 
   const startFindMe = async () => {
+    console.log('startFindMe called');
     if (!permission) {
       await requestPermission();
     }
@@ -222,6 +234,7 @@ export default function PhotosScreen() {
         return;
       }
     }
+    console.log('Setting camera mode to find-me');
     setCameraMode('find-me');
     setCameraFacing('front'); // Use front camera for selfies
     setShowCamera(true);
@@ -230,21 +243,56 @@ export default function PhotosScreen() {
   const handleFindMe = async (uri: string) => {
     setIsSearching(true);
     try {
+      console.log('Starting face recognition with URI:', uri);
       const result = await api.findMe(uri);
+      console.log('Face recognition result:', result);
       
-      if (result.matches.length > 0) {
+      if (result.matches && result.matches.length > 0) {
         setMatchedIds(result.matches);
         setShowCamera(false);
-        Alert.alert('Found You!', `We found ${result.matches.length} photos matching your face.`);
-        // Filter photos to show only matches - you can implement this filtering logic
-        // For now, we'll just show the alert
+        
+        // Filter photos to show only matches
+        // The matches are filenames from the backend, so we need to match them with our photos
+        const matchedPhotos = photos.filter(photo => {
+          // Check if photo filename matches any of the matched IDs
+          return result.matches.some((matchId: string) => {
+            // Extract filename from photo source
+            if (typeof photo.source === 'object' && photo.source.uri) {
+              const uri = photo.source.uri;
+              // Check if URI contains the match ID (filename)
+              // Match IDs are filenames like "wp-content_uploads_2024_11_1001_BRDY2733-1536x1025.jpg"
+              // We need to check if the photo URI or ID contains this
+              const filename = uri.split('/').pop() || '';
+              return filename.includes(matchId) || photo.id.includes(matchId) || matchId.includes(filename);
+            }
+            return false;
+          });
+        });
+        
+        console.log(`Found ${matchedPhotos.length} matching photos in current photo list`);
+        console.log('Matched IDs:', result.matches);
+        
+        Alert.alert(
+          'Found You!', 
+          `We found ${result.matches.length} photos matching your face.`,
+          [
+            { 
+              text: 'OK', 
+              onPress: () => {
+                // You could add a filter state here to show only matched photos
+                // For now, we'll just show the alert
+              }
+            }
+          ]
+        );
       } else {
-        Alert.alert('No Matches', 'Could not find any photos matching your face.');
+        Alert.alert('No Matches', result.message || 'Could not find any photos matching your face.');
         setShowCamera(false); 
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Face recognition error:', error);
-      Alert.alert('Error', 'Face recognition server is offline or unreachable.');
+      const errorMessage = error?.message || 'Face recognition server is offline or unreachable.';
+      Alert.alert('Error', errorMessage);
       setShowCamera(false);
     } finally {
       setIsSearching(false);

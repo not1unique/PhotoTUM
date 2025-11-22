@@ -11,8 +11,7 @@ CORS(app)
 # --- CONFIGURATION ---
 # UPDATE THIS PATH to point to where the photos are stored in the friend's app.
 # By default, it looks for an 'images' folder in the same directory as this script.
-# IMAGE_FOLDER = os.path.abspath(os.environ.get('IMAGE_FOLDER', os.path.join(os.path.dirname(__file__), '../assets/images_hackatum2024')))
-IMAGE_FOLDER = '../assets/images_hackatum2024'
+IMAGE_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), '../assets/images_hackatum2024'))
 
 # Cache file for face encodings (will be created automatically)
 CACHE_FILE = os.path.join(os.path.dirname(__file__), 'encodings_cache.pkl')

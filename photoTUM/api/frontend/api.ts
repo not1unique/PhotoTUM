@@ -52,34 +52,50 @@ export const api = {
   },
 
   findMe: async (photoUri: string): Promise<MatchResult> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    
     try {
       console.log(`Sending selfie to ${BASE_URL}/find_me...`);
+      console.log('Photo URI:', photoUri);
+      
       const formData = new FormData();
       
+      // React Native FormData - ensure file:// prefix is present
+      const uri = photoUri.startsWith('file://') ? photoUri : `file://${photoUri}`;
+      
       // React Native specific FormData structure
-      // @ts-ignore
+      // @ts-ignore - React Native FormData format
       formData.append('file', {
-        uri: photoUri,
+        uri: uri,
         type: 'image/jpeg',
         name: 'selfie.jpg',
-      });
+      } as any);
 
       const response = await fetch(`${BASE_URL}/find_me`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        signal: controller.signal,
+        // DO NOT set Content-Type header - let React Native set it automatically with boundary
       });
 
       if (!response.ok) {
         const errText = await response.text();
+        console.error('Server error response:', errText);
         throw new Error(`Server error: ${errText}`);
       }
-      return await response.json();
-    } catch (error) {
+      
+      const result = await response.json();
+      console.log('Face recognition result:', result);
+      return result;
+    } catch (error: any) {
       console.error('API Error (findMe):', error);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout - server took too long to respond');
+      }
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 };

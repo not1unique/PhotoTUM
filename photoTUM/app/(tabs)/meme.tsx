@@ -521,7 +521,7 @@ export default function MemeScreen() {
                   placeholderTextColor={Colors.dark.icon}
                   value={textItem.text}
                   onChangeText={(text) => updateText(textItem.id, text)}
-                  maxLength={50}
+                  maxLength={400}
                 />
               </View>
               {texts.length > 1 && (
