@@ -4,22 +4,82 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, BrandColors } from '@/constants/theme';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useState, useEffect, useCallback } from 'react';
+import { Image as ExpoImage } from 'expo-image';
+import { getMemes, getMemeChatId } from '@/utils/memeStorage';
 
 export default function ChatDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<Array<{ id: number; text?: string; imageUri?: string; sender: string; time: string; isMe: boolean }>>([]);
+  const isMemeChat = id === String(getMemeChatId());
   
-  // Mock messages - in real app, fetch based on chat id
-  const messages = [
-    { id: 1, text: 'Hey team! How is everyone doing?', sender: 'Alice', time: '10:30', isMe: false },
-    { id: 2, text: 'Great! Just finished the backend API', sender: 'You', time: '10:32', isMe: true },
-    { id: 3, text: 'Awesome! I\'m working on the frontend now', sender: 'Bob', time: '10:35', isMe: false },
-    { id: 4, text: 'Let\'s sync up in 30 minutes?', sender: 'You', time: '10:36', isMe: true },
-    { id: 5, text: 'Sounds good!', sender: 'Alice', time: '10:37', isMe: false },
-  ];
+  const loadMessages = useCallback(() => {
+    if (isMemeChat) {
+      // Load memes and convert to messages
+      const memes = getMemes();
+      console.log('Loading memes, count:', memes.length);
+      
+      const memeMessages = memes.map((meme) => {
+        console.log('Meme:', meme.id, 'URI:', meme.imageUri?.substring(0, 50) + '...');
+        return {
+          id: meme.id,
+          imageUri: meme.imageUri,
+          sender: 'You',
+          time: new Date(meme.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          isMe: true,
+        };
+      });
+      
+      // Add default messages if no memes yet
+      const defaultMessages = memes.length === 0 ? [
+        { id: 1, text: 'Welcome to the Meme Masters chat! 🎭', sender: 'System', time: '10:00', isMe: false },
+        { id: 2, text: 'Create your first meme using the "Make a Meme" button!', sender: 'System', time: '10:01', isMe: false },
+      ] : [];
+      
+      const allMessages = [...defaultMessages, ...memeMessages];
+      console.log('Setting messages, total:', allMessages.length);
+      setMessages(allMessages);
+    } else {
+      // Regular chat messages
+      setMessages([
+        { id: 1, text: 'Hey team! How is everyone doing?', sender: 'Alice', time: '10:30', isMe: false },
+        { id: 2, text: 'Great! Just finished the backend API', sender: 'You', time: '10:32', isMe: true },
+        { id: 3, text: 'Awesome! I\'m working on the frontend now', sender: 'Bob', time: '10:35', isMe: false },
+        { id: 4, text: 'Let\'s sync up in 30 minutes?', sender: 'You', time: '10:36', isMe: true },
+        { id: 5, text: 'Sounds good!', sender: 'Alice', time: '10:37', isMe: false },
+      ]);
+    }
+  }, [isMemeChat]);
+
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  // Refresh messages when screen comes into focus (for meme chat)
+  useFocusEffect(
+    useCallback(() => {
+      if (isMemeChat) {
+        // Small delay to ensure memes are saved before loading
+        const timeoutId = setTimeout(() => {
+          loadMessages();
+        }, 300);
+        return () => clearTimeout(timeoutId);
+      }
+    }, [isMemeChat, loadMessages])
+  );
+  
+  // Also refresh when component mounts (in case we navigate directly)
+  useEffect(() => {
+    if (isMemeChat) {
+      const timeoutId = setTimeout(() => {
+        loadMessages();
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isMemeChat]);
 
   const handleSend = () => {
     if (message.trim()) {
@@ -38,8 +98,12 @@ export default function ChatDetailScreen() {
             <IconSymbol size={24} name="chevron.left" color={BrandColors.white} />
           </TouchableOpacity>
           <View style={styles.headerInfo}>
-            <ThemedText style={styles.headerTitle}>Team Alpha</ThemedText>
-            <ThemedText style={styles.headerSubtitle}>5 members</ThemedText>
+            <ThemedText style={styles.headerTitle}>
+              {isMemeChat ? 'Meme Masters 🎭' : 'Team Alpha'}
+            </ThemedText>
+            <ThemedText style={styles.headerSubtitle}>
+              {isMemeChat ? 'Meme chat' : '5 members'}
+            </ThemedText>
           </View>
           <TouchableOpacity style={styles.moreButton}>
             <IconSymbol size={24} name="ellipsis" color={BrandColors.blueAccent} />
@@ -65,9 +129,26 @@ export default function ChatDetailScreen() {
                 {!msg.isMe && (
                   <ThemedText style={styles.messageSender}>{msg.sender}</ThemedText>
                 )}
-                <ThemedText style={[styles.messageText, msg.isMe && styles.messageTextMe]}>
-                  {msg.text}
-                </ThemedText>
+                {msg.imageUri ? (
+                  <View style={styles.memeImageContainer}>
+                    <ExpoImage
+                      source={{ uri: msg.imageUri }}
+                      style={styles.memeImage}
+                      contentFit="contain"
+                      cachePolicy="memory-disk"
+                      onError={(error) => {
+                        console.error('Error loading meme image:', error, 'URI:', msg.imageUri);
+                      }}
+                      onLoad={() => {
+                        console.log('Meme image loaded successfully:', msg.imageUri);
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <ThemedText style={[styles.messageText, msg.isMe && styles.messageTextMe]}>
+                    {msg.text}
+                  </ThemedText>
+                )}
                 <ThemedText style={[styles.messageTime, msg.isMe && styles.messageTimeMe]}>
                   {msg.time}
                 </ThemedText>
@@ -216,6 +297,16 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.5,
+  },
+  memeImageContainer: {
+    width: '100%',
+    maxWidth: 300,
+    marginBottom: 8,
+  },
+  memeImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 12,
   },
 });
 
