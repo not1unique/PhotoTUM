@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, Dimensions, Modal, Image, Alert } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, Dimensions, Modal, Alert } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -6,11 +6,9 @@ import { Colors, BrandColors } from '@/constants/theme';
 import { useState, useEffect, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 import { Image as ExpoImage } from 'expo-image';
-import * as FileSystem from 'expo-file-system';
-import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { router } from 'expo-router';
+import { Asset } from 'expo-asset';
+import { galleryImages, publicImages } from '@/utils/imageLoader';
 
 const { width } = Dimensions.get('window');
 const imageSize = (width - 48) / 3; // 3 images per row with padding
@@ -18,8 +16,8 @@ const largeImageSize = imageSize * 2 + 4; // 2x2 = 4 photos size
 
 interface Photo {
   id: string;
-  uri: string;
-  source: 'gallery' | 'public' | 'camera';
+  source: number | { uri: string }; // require() module or { uri: string }
+  sourceType: 'gallery' | 'public' | 'camera';
   isFavorite: boolean;
   timestamp: number;
 }
@@ -29,67 +27,75 @@ export default function PhotosScreen() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [showCamera, setShowCamera] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'back' | 'front'>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
-  // Load photos from folders
+  // Load photos from assets folders
   useEffect(() => {
     loadPhotos();
   }, []);
 
   const loadPhotos = async () => {
     try {
-      // For React Native, we'll use a combination of approaches
-      // In production, you'd use a backend API or asset bundling
       const galleryPhotos: Photo[] = [];
       const publicPhotos: Photo[] = [];
 
-      // Create photo entries - in production, these would come from a backend or asset list
-      // For now, using placeholder images that demonstrate the functionality
-      // The actual implementation would scan the directories server-side or use asset lists
-      
-      // Gallery photos (2024) - sample set
-      for (let i = 0; i < 25; i++) {
-        galleryPhotos.push({
-          id: `gallery-${i}`,
-          uri: `https://picsum.photos/400/400?random=${i + 100}`, // Placeholder - replace with actual paths
-          source: 'gallery',
-          isFavorite: Math.random() > 0.85,
-          timestamp: Date.now() - i * 60000,
-        });
+      // Load gallery photos (2024) using Asset API
+      for (let i = 0; i < galleryImages.length; i++) {
+        try {
+          const imageModule = galleryImages[i];
+          if (imageModule) {
+            const asset = Asset.fromModule(imageModule);
+            await asset.downloadAsync(); // Ensure asset is loaded
+            galleryPhotos.push({
+              id: `gallery-${i}`,
+              source: { uri: asset.localUri || asset.uri },
+              sourceType: 'gallery',
+              isFavorite: false,
+              timestamp: Date.now() - i * 60000,
+            });
+          }
+        } catch (e) {
+          console.error(`Error loading gallery image ${i}:`, e);
+        }
       }
 
-      // Public photos (2023) - sample set
-      for (let i = 0; i < 25; i++) {
-        publicPhotos.push({
-          id: `public-${i}`,
-          uri: `https://picsum.photos/400/400?random=${i + 200}`, // Placeholder - replace with actual paths
-          source: 'public',
-          isFavorite: Math.random() > 0.85,
-          timestamp: Date.now() - i * 60000,
-        });
+      // Load public photos (2023) using Asset API
+      for (let i = 0; i < publicImages.length; i++) {
+        try {
+          const imageModule = publicImages[i];
+          if (imageModule) {
+            const asset = Asset.fromModule(imageModule);
+            await asset.downloadAsync(); // Ensure asset is loaded
+            publicPhotos.push({
+              id: `public-${i}`,
+              source: { uri: asset.localUri || asset.uri },
+              sourceType: 'public',
+              isFavorite: false,
+              timestamp: Date.now() - i * 60000,
+            });
+          }
+        } catch (e) {
+          console.error(`Error loading public image ${i}:`, e);
+        }
       }
 
+      console.log(`Loaded ${galleryPhotos.length} gallery photos and ${publicPhotos.length} public photos`);
+      if (galleryPhotos.length > 0) {
+        console.log('Sample gallery photo URI:', galleryPhotos[0].source);
+      }
       setPhotos([...galleryPhotos, ...publicPhotos]);
     } catch (error) {
       console.error('Error loading photos:', error);
-      // Fallback: create some demo photos
-      const demoPhotos: Photo[] = Array.from({ length: 20 }, (_, i) => ({
-        id: `demo-${i}`,
-        uri: `https://picsum.photos/400/400?random=${i}`,
-        source: i % 2 === 0 ? 'gallery' : 'public',
-        isFavorite: false,
-        timestamp: Date.now() - i * 1000,
-      }));
-      setPhotos(demoPhotos);
     }
   };
 
   const getFilteredPhotos = () => {
     if (selectedTab === 'gallery') {
-      return photos.filter(p => p.source === 'gallery' || p.source === 'camera');
+      return photos.filter(p => p.sourceType === 'gallery' || p.sourceType === 'camera');
     } else if (selectedTab === 'public') {
-      return photos.filter(p => p.source === 'public');
+      return photos.filter(p => p.sourceType === 'public');
     } else {
       return photos.filter(p => p.isFavorite);
     }
@@ -111,14 +117,11 @@ export default function PhotosScreen() {
       try {
         const photo = await cameraRef.current.takePictureAsync();
         if (photo) {
-          // Add watermark
-          const watermarkedPhoto = await addWatermark(photo.uri);
-          
           // Save to photos
           const newPhoto: Photo = {
             id: `camera-${Date.now()}`,
-            uri: watermarkedPhoto,
-            source: 'camera',
+            source: { uri: photo.uri },
+            sourceType: 'camera',
             isFavorite: false,
             timestamp: Date.now(),
           };
@@ -133,21 +136,19 @@ export default function PhotosScreen() {
     }
   };
 
-  const addWatermark = async (imageUri: string): Promise<string> => {
-    try {
-      // For watermark, we'll use image manipulation
-      // In a real app, you'd use a library like react-native-view-shot or expo-image-manipulator
-      // For now, we'll return the original URI and add a visual watermark in the UI
-      return imageUri;
-    } catch (error) {
-      console.error('Error adding watermark:', error);
-      return imageUri;
-    }
-  };
-
   const toggleFavorite = (photoId: string) => {
     setPhotos(prev =>
-      prev.map(p => (p.id === photoId ? { ...p, isFavorite: !p.isFavorite } : p))
+      prev.map(p => {
+        if (p.id === photoId) {
+          const updated = { ...p, isFavorite: !p.isFavorite };
+          // Update selected photo if it's the same one
+          if (selectedPhoto?.id === photoId) {
+            setSelectedPhoto(updated);
+          }
+          return updated;
+        }
+        return p;
+      })
     );
   };
 
@@ -173,23 +174,57 @@ export default function PhotosScreen() {
 
   const filteredPhotos = getFilteredPhotos();
 
-  // Calculate grid positions - large photos every 7th, alternating sides
-  const getPhotoStyle = (index: number) => {
-    const isLarge = index % 7 === 0;
-    const shouldAlignLeft = Math.floor(index / 7) % 2 === 0;
+  // Group photos into rows based on the pattern:
+  // Row 1: huge (left) + 2 small (right)
+  // Row 2: 3 small
+  // Row 3: 2 small (left) + huge (right)
+  // Row 4: 3 small
+  // Repeat...
+  const getPhotoRows = () => {
+    const rows: Array<{ photos: Photo[]; type: 'huge-left' | 'three-small' | 'huge-right' }> = [];
+    let index = 0;
 
-    if (isLarge) {
-      return {
-        width: largeImageSize,
-        height: largeImageSize,
-        ...(shouldAlignLeft ? { marginRight: 2 } : { marginLeft: 2 }),
-      };
+    while (index < filteredPhotos.length) {
+      const rowIndex = rows.length % 4;
+
+      if (rowIndex === 0) {
+        // Huge left + 2 small right
+        const rowPhotos = filteredPhotos.slice(index, index + 3);
+        if (rowPhotos.length === 3) {
+          rows.push({ photos: rowPhotos, type: 'huge-left' });
+          index += 3;
+        } else {
+          // Handle remaining photos
+          rows.push({ photos: rowPhotos, type: 'three-small' });
+          break;
+        }
+      } else if (rowIndex === 1) {
+        // 3 small
+        const rowPhotos = filteredPhotos.slice(index, index + 3);
+        rows.push({ photos: rowPhotos, type: 'three-small' });
+        index += rowPhotos.length;
+      } else if (rowIndex === 2) {
+        // 2 small left + huge right
+        const rowPhotos = filteredPhotos.slice(index, index + 3);
+        if (rowPhotos.length === 3) {
+          rows.push({ photos: rowPhotos, type: 'huge-right' });
+          index += 3;
+        } else {
+          rows.push({ photos: rowPhotos, type: 'three-small' });
+          break;
+        }
+      } else {
+        // 3 small
+        const rowPhotos = filteredPhotos.slice(index, index + 3);
+        rows.push({ photos: rowPhotos, type: 'three-small' });
+        index += rowPhotos.length;
+      }
     }
-    return {
-      width: imageSize,
-      height: imageSize,
-    };
+
+    return rows;
   };
+
+  const photoRows = getPhotoRows();
 
   return (
     <ThemedView style={styles.container}>
@@ -250,34 +285,147 @@ export default function PhotosScreen() {
         {/* Photo Grid */}
         <ScrollView style={styles.photoGrid} showsVerticalScrollIndicator={false}>
           <View style={styles.gridContainer}>
-            {filteredPhotos.map((photo, index) => {
-              const photoStyle = getPhotoStyle(index);
-              const isLarge = index % 7 === 0;
-
+            {photoRows.length === 0 ? (
+              <View style={styles.emptyState}>
+                <IconSymbol size={64} name="photo" color={Colors.dark.icon} />
+                <ThemedText style={styles.emptyStateText}>No photos found</ThemedText>
+                <ThemedText style={styles.emptyStateSubtext}>
+                  {photos.length === 0 ? 'Loading images...' : `No photos in ${selectedTab} tab`}
+                </ThemedText>
+              </View>
+            ) : (
+              photoRows.map((row, rowIndex) => {
               return (
-                <TouchableOpacity
-                  key={photo.id}
-                  style={[styles.photo, photoStyle]}
-                  onPress={() => setSelectedPhoto(photo)}
-                >
-                  <ExpoImage
-                    source={{ uri: photo.uri }}
-                    style={styles.photoImage}
-                    contentFit="cover"
-                  />
-                  {photo.isFavorite && (
-                    <View style={styles.favoriteBadge}>
-                      <IconSymbol size={16} name="heart.fill" color={BrandColors.blueAccent} />
-                    </View>
+                <View key={`row-${rowIndex}`} style={styles.photoRow}>
+                  {row.type === 'huge-left' ? (
+                    // Large on left, 2 small stacked vertically on right
+                    <>
+                      <TouchableOpacity
+                        key={row.photos[0].id}
+                        style={[styles.photo, { width: largeImageSize, height: largeImageSize }]}
+                        onPress={() => setSelectedPhoto(row.photos[0])}
+                      >
+                        <ExpoImage
+                          source={row.photos[0].source}
+                          style={styles.photoImage}
+                          contentFit="cover"
+                        />
+                        {row.photos[0].isFavorite && (
+                          <View style={styles.favoriteBadge}>
+                            <IconSymbol size={16} name="heart.fill" color={BrandColors.blueAccent} />
+                          </View>
+                        )}
+                        {row.photos[0].sourceType === 'camera' && (
+                          <View style={styles.watermark}>
+                            <ThemedText style={styles.watermarkText}>HackaTUM</ThemedText>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                      <View style={styles.smallPhotosColumn}>
+                        {row.photos.slice(1, 3).map((photo) => (
+                          <TouchableOpacity
+                            key={photo.id}
+                            style={[styles.photo, { width: imageSize, height: imageSize }]}
+                            onPress={() => setSelectedPhoto(photo)}
+                          >
+                            <ExpoImage
+                              source={photo.source}
+                              style={styles.photoImage}
+                              contentFit="cover"
+                            />
+                            {photo.isFavorite && (
+                              <View style={styles.favoriteBadge}>
+                                <IconSymbol size={16} name="heart.fill" color={BrandColors.blueAccent} />
+                              </View>
+                            )}
+                            {photo.sourceType === 'camera' && (
+                              <View style={styles.watermark}>
+                                <ThemedText style={styles.watermarkText}>HackaTUM</ThemedText>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </>
+                  ) : row.type === 'huge-right' ? (
+                    // 2 small stacked vertically on left, large on right
+                    <>
+                      <View style={styles.smallPhotosColumn}>
+                        {row.photos.slice(0, 2).map((photo) => (
+                          <TouchableOpacity
+                            key={photo.id}
+                            style={[styles.photo, { width: imageSize, height: imageSize }]}
+                            onPress={() => setSelectedPhoto(photo)}
+                          >
+                            <ExpoImage
+                              source={photo.source}
+                              style={styles.photoImage}
+                              contentFit="cover"
+                            />
+                            {photo.isFavorite && (
+                              <View style={styles.favoriteBadge}>
+                                <IconSymbol size={16} name="heart.fill" color={BrandColors.blueAccent} />
+                              </View>
+                            )}
+                            {photo.sourceType === 'camera' && (
+                              <View style={styles.watermark}>
+                                <ThemedText style={styles.watermarkText}>HackaTUM</ThemedText>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <TouchableOpacity
+                        key={row.photos[2].id}
+                        style={[styles.photo, { width: largeImageSize, height: largeImageSize }]}
+                        onPress={() => setSelectedPhoto(row.photos[2])}
+                      >
+                        <ExpoImage
+                          source={row.photos[2].source}
+                          style={styles.photoImage}
+                          contentFit="cover"
+                        />
+                        {row.photos[2].isFavorite && (
+                          <View style={styles.favoriteBadge}>
+                            <IconSymbol size={16} name="heart.fill" color={BrandColors.blueAccent} />
+                          </View>
+                        )}
+                        {row.photos[2].sourceType === 'camera' && (
+                          <View style={styles.watermark}>
+                            <ThemedText style={styles.watermarkText}>HackaTUM</ThemedText>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    // 3 small photos in a row
+                    row.photos.map((photo) => (
+                      <TouchableOpacity
+                        key={photo.id}
+                        style={[styles.photo, { width: imageSize, height: imageSize }]}
+                        onPress={() => setSelectedPhoto(photo)}
+                      >
+                        <ExpoImage
+                          source={photo.source}
+                          style={styles.photoImage}
+                          contentFit="cover"
+                        />
+                        {photo.isFavorite && (
+                          <View style={styles.favoriteBadge}>
+                            <IconSymbol size={16} name="heart.fill" color={BrandColors.blueAccent} />
+                          </View>
+                        )}
+                        {photo.sourceType === 'camera' && (
+                          <View style={styles.watermark}>
+                            <ThemedText style={styles.watermarkText}>HackaTUM</ThemedText>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))
                   )}
-                  {photo.source === 'camera' && (
-                    <View style={styles.watermark}>
-                      <ThemedText style={styles.watermarkText}>HackaTUM</ThemedText>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                </View>
               );
-            })}
+            }))}
           </View>
         </ScrollView>
 
@@ -306,21 +454,23 @@ export default function PhotosScreen() {
                         color={selectedPhoto.isFavorite ? BrandColors.blueAccent : BrandColors.white}
                       />
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => deletePhoto(selectedPhoto.id)}
-                      style={styles.modalActionButton}
-                    >
-                      <IconSymbol size={24} name="trash" color={BrandColors.white} />
-                    </TouchableOpacity>
+                    {selectedPhoto.sourceType === 'camera' && (
+                      <TouchableOpacity
+                        onPress={() => deletePhoto(selectedPhoto.id)}
+                        style={styles.modalActionButton}
+                      >
+                        <IconSymbol size={24} name="trash" color={BrandColors.white} />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
                 <View style={styles.modalImageContainer}>
                   <ExpoImage
-                    source={{ uri: selectedPhoto.uri }}
+                    source={selectedPhoto.source}
                     style={styles.modalImage}
                     contentFit="contain"
                   />
-                  {selectedPhoto.source === 'camera' && (
+                  {selectedPhoto.sourceType === 'camera' && (
                     <View style={styles.modalWatermark}>
                       <ThemedText style={styles.modalWatermarkText}>HackaTUM</ThemedText>
                     </View>
@@ -341,7 +491,7 @@ export default function PhotosScreen() {
             <CameraView
               ref={cameraRef}
               style={styles.camera}
-              facing="back"
+              facing={cameraFacing}
             >
               <View style={styles.cameraControls}>
                 <TouchableOpacity
@@ -356,7 +506,12 @@ export default function PhotosScreen() {
                 >
                   <View style={styles.captureButtonInner} />
                 </TouchableOpacity>
-                <View style={styles.cameraButton} />
+                <TouchableOpacity
+                  style={styles.cameraButton}
+                  onPress={() => setCameraFacing(cameraFacing === 'back' ? 'front' : 'back')}
+                >
+                  <IconSymbol size={32} name="arrow.triangle.2.circlepath.camera.fill" color={BrandColors.white} />
+                </TouchableOpacity>
               </View>
               <View style={styles.cameraWatermarkPreview}>
                 <ThemedText style={styles.cameraWatermarkText}>HackaTUM</ThemedText>
@@ -452,10 +607,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 16,
     paddingBottom: 20,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+    gap: 2,
+    alignItems: 'flex-start',
+  },
+  smallPhotosColumn: {
+    flexDirection: 'column',
+    gap: 2,
   },
   photo: {
     margin: 2,
@@ -587,5 +750,25 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: 'Orbitron',
     color: BrandColors.white,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    fontFamily: 'Orbitron',
+    color: BrandColors.white,
+    marginTop: 16,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: Colors.dark.icon,
+    marginTop: 8,
+    textAlign: 'center',
   },
 });

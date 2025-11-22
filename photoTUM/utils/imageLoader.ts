@@ -1,0 +1,61 @@
+// Image loader utility for HackaTUM photos
+// This file is auto-generated. Do not edit manually.
+// Run: node scripts/generate-image-loader.js
+
+// Gallery images (2024) - using symlinks in assets/images
+export const galleryImages = [
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1001_BRDY2733-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1007_BRDY2735-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1013_BRDY2736-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1019_BRDY2739-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1020_BRDY2739.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1026_BRDY2740.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1031_BRDY2741-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1037_BRDY2744-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1043_BRDY2746-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1049_BRDY2747-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1055_BRDY2750-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1061_BRDY2752-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1067_BRDY2753-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1073_BRDY2756-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1079_BRDY2761-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1080_BRDY2761.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1086_BRDY2766.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1091_BRDY2767-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1097_BRDY2770-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1103_BRDY2774-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1109_BRDY2777-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1115_BRDY2789-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1121_BRDY2790-1536x1024.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1127_BRDY2791-1536x1025.jpg'),
+  require('../assets/images/hackatum2024_wp-content_uploads_2024_11_1133_BRDY2794-1536x1025.jpg'),
+];
+
+// Public images (2023) - using symlinks in assets/images
+export const publicImages = [
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1000_DSC_3137.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1005_DSC_3148-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1006_DSC_3148.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1011_DSC_3153-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1012_DSC_3153.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1017_DSC_3155-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1018_DSC_3155.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1023_DSC_3161-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1024_DSC_3161.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1029_DSC_3166-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1030_DSC_3166.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1035_DSC_3173-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1036_DSC_3173.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1041_DSC_3177-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1042_DSC_3177.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1047_DSC_3181-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1048_DSC_3181.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_104_1AG_5889-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1053_DSC_3189-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1054_DSC_3189.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1059_DSC_3201-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_105_1AG_5889.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1060_DSC_3201.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1065_DSC_3224-1536x1024.jpg'),
+  require('../assets/images/hackatum2023_wp-content_uploads_2023_11_1066_DSC_3224.jpg'),
+];
