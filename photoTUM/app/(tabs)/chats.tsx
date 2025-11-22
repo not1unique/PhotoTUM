@@ -1,11 +1,13 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
-import { useState } from 'react';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, BrandColors } from '@/constants/theme';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { BrandColors, Colors } from '@/constants/theme';
+import { commonStyles } from '@/styles/common';
+import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ChatsScreen() {
   const router = useRouter();
@@ -24,25 +26,25 @@ export default function ChatsScreen() {
     : chats.filter(chat => chat.type === selectedFilter);
 
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <ThemedView style={commonStyles.container}>
+      <SafeAreaView edges={['top']} style={commonStyles.safeArea}>
         {/* Header */}
-        <View style={styles.header}>
-          <ThemedText style={styles.headerTitle}>Chats</ThemedText>
-          <TouchableOpacity style={styles.newChatButton}>
+        <View style={commonStyles.header}>
+          <ThemedText style={commonStyles.headerTitle}>Chats</ThemedText>
+          <TouchableOpacity style={commonStyles.headerButton}>
             <IconSymbol size={24} name="plus.message" color={BrandColors.blueAccent} />
           </TouchableOpacity>
         </View>
 
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
+      <BlurView intensity={80} tint="dark" style={styles.searchContainer}>
         <IconSymbol size={20} name="magnifyingglass" color={Colors.dark.icon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search chats..."
           placeholderTextColor={Colors.dark.icon}
         />
-      </View>
+      </BlurView>
 
         {/* Filter Tabs */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterContainer} contentContainerStyle={styles.filterContent}>
@@ -73,22 +75,39 @@ export default function ChatsScreen() {
         </ScrollView>
 
         {/* Chat List */}
-        <ScrollView style={styles.chatList} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.chatList} 
+          contentContainerStyle={styles.chatListContent}
+          showsVerticalScrollIndicator={false}
+        >
           {filteredChats.map((chat) => (
             <TouchableOpacity 
               key={chat.id} 
               style={styles.chatItem}
               onPress={() => router.push(`/chat/${chat.id}`)}
             >
-            <View style={[
-              styles.chatAvatar,
-              { backgroundColor: chat.type === 'org' ? BrandColors.blueAccent + '40' : Colors.dark.cardBackground }
-            ]}>
-              <IconSymbol 
-                size={28} 
-                name={chat.type === 'org' ? 'megaphone.fill' : chat.type === 'meme' ? 'face.smiling.fill' : 'person.2.fill'} 
-                color={chat.type === 'org' ? BrandColors.blueAccent : Colors.dark.icon} 
+            <View style={styles.chatAvatarContainer}>
+              {/* Base color layer */}
+              <View 
+                style={[
+                  styles.chatAvatarBase,
+                  { backgroundColor: chat.type === 'org' ? 'rgba(77, 111, 173, 0.4)' : 'rgba(255, 255, 255, 0.1)' }
+                ]}
               />
+              {/* BlurView on top */}
+              <BlurView 
+                intensity={60} 
+                tint="dark" 
+                style={styles.chatAvatarBlur}
+              >
+                <IconSymbol 
+                  size={28} 
+                  name={chat.type === 'org' ? 'megaphone.fill' : chat.type === 'meme' ? 'face.smiling.fill' : 'person.2.fill'} 
+                  color={chat.type === 'org' ? BrandColors.blueAccent : Colors.dark.icon} 
+                />
+              </BlurView>
+              {/* Border on top */}
+              <View style={styles.chatAvatarBorder} />
             </View>
             <View style={styles.chatContent}>
               <View style={styles.chatHeader}>
@@ -115,41 +134,23 @@ export default function ChatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BrandColors.darkBackground,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    fontFamily: 'Orbitron',
-    color: BrandColors.white,
-  },
-  newChatButton: {
-    padding: 8,
-  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.dark.cardBackground,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     marginHorizontal: 20,
     marginBottom: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   searchInput: {
     flex: 1,
@@ -161,53 +162,81 @@ const styles = StyleSheet.create({
   filterContainer: {
     marginBottom: 16,
     paddingHorizontal: 20,
+    maxHeight: 30,
   },
   filterContent: {
     paddingRight: 20,
   },
   filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: Colors.dark.cardBackground,
-    marginRight: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginRight: 6,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    minHeight: 32,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    minHeight: 28,
+    maxHeight: 30,
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   filterButtonActive: {
-    backgroundColor: BrandColors.blueAccent,
+    backgroundColor: 'rgba(77, 111, 173, 0.6)',
     borderColor: BrandColors.blueAccent,
   },
   filterText: {
     fontFamily: 'Orbitron',
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.dark.icon,
   },
   filterTextActive: {
     fontFamily: 'Orbitron',
-    fontSize: 12,
+    fontSize: 11,
     color: BrandColors.white,
     fontWeight: '600',
   },
   chatList: {
     flex: 1,
   },
+  chatListContent: {
+    paddingBottom: Platform.OS === 'ios' ? 120 : 90,
+  },
   chatItem: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.dark.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
   },
-  chatAvatar: {
+  chatAvatarContainer: {
     width: 56,
     height: 56,
     borderRadius: 28,
+    marginRight: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  chatAvatarBase: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+  },
+  chatAvatarBlur: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    borderRadius: 28,
+  },
+  chatAvatarBorder: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    pointerEvents: 'none',
   },
   chatContent: {
     flex: 1,
@@ -248,6 +277,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 111, 173, 0.5)',
+    shadowColor: BrandColors.blueAccent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 4,
   },
   unreadText: {
     fontSize: 12,

@@ -1,14 +1,18 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, Dimensions, Modal, Alert } from 'react-native';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { api } from '@/api/frontend/api';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Colors, BrandColors } from '@/constants/theme';
-import { useState, useEffect, useRef } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { BrandColors, Colors } from '@/constants/theme';
+import { commonStyles } from '@/styles/common';
+import { galleryImages, publicImages } from '@/utils/imageLoader';
+import { deleteMeme, getMemesAsync } from '@/utils/memeStorage';
+import { Asset } from 'expo-asset';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image as ExpoImage } from 'expo-image';
-import { Asset } from 'expo-asset';
-import { galleryImages, publicImages } from '@/utils/imageLoader';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Dimensions, Modal, PanResponder, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 const imageSize = (width - 48) / 3; // 3 images per row with padding
@@ -17,7 +21,7 @@ const largeImageSize = imageSize * 2 + 4; // 2x2 = 4 photos size
 interface Photo {
   id: string;
   source: number | { uri: string }; // require() module or { uri: string }
-  sourceType: 'gallery' | 'public' | 'camera';
+  sourceType: 'gallery' | 'public' | 'camera' | 'meme';
   isFavorite: boolean;
   timestamp: number;
 }
@@ -28,13 +32,61 @@ export default function PhotosScreen() {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'back' | 'front'>('back');
+  const [cameraMode, setCameraMode] = useState<'default' | 'find-me'>('default');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  
+  // Face Recognition State
+  const [isSearching, setIsSearching] = useState(false);
+  const [matchedIds, setMatchedIds] = useState<string[]>([]);
+  
+  // Gesture handling for photo viewer
+  const pan = useRef(new Animated.ValueXY()).current;
+  const lastTap = useRef(0);
+  const panResponderRef = useRef<ReturnType<typeof PanResponder.create> | null>(null);
+  
+  // Heart animation state
+  const [heartAnimation, setHeartAnimation] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+  }>({ visible: false, x: 0, y: 0 });
+  const heartScale = useRef(new Animated.Value(0)).current;
+  const heartOpacity = useRef(new Animated.Value(0)).current;
+  const imageContainerLayout = useRef({ x: 0, y: 0, width: 0, height: 0 });
 
   // Load photos from assets folders
   useEffect(() => {
     loadPhotos();
   }, []);
+
+  // Reload photos when screen comes into focus (to show new memes)
+  useFocusEffect(
+    useCallback(() => {
+      // Reload only memes part - more efficient
+      const reloadMemes = async () => {
+        try {
+          const memes = await getMemesAsync();
+          const memePhotos: Photo[] = memes.map((meme) => ({
+            id: `meme-${meme.id}`,
+            source: { uri: meme.imageUri },
+            sourceType: 'meme' as const,
+            isFavorite: false,
+            timestamp: meme.timestamp,
+          }));
+          
+          // Update photos: remove old memes and add new ones
+          setPhotos(prev => {
+            const withoutMemes = prev.filter(p => p.sourceType !== 'meme');
+            return [...withoutMemes, ...memePhotos];
+          });
+        } catch (error) {
+          console.error('Error reloading memes:', error);
+        }
+      };
+      reloadMemes();
+    }, [])
+  );
 
   const loadPhotos = async () => {
     try {
@@ -81,7 +133,23 @@ export default function PhotosScreen() {
         }
       }
 
-      console.log(`Loaded ${galleryPhotos.length} gallery photos and ${publicPhotos.length} public photos`);
+      // Load memes and add them to public photos
+      try {
+        const memes = await getMemesAsync();
+        const memePhotos: Photo[] = memes.map((meme) => ({
+          id: `meme-${meme.id}`,
+          source: { uri: meme.imageUri },
+          sourceType: 'meme' as const,
+          isFavorite: false,
+          timestamp: meme.timestamp,
+        }));
+        publicPhotos.push(...memePhotos);
+        console.log(`Loaded ${memes.length} memes`);
+      } catch (error) {
+        console.error('Error loading memes:', error);
+      }
+
+      console.log(`Loaded ${galleryPhotos.length} gallery photos and ${publicPhotos.length} public photos (including memes)`);
       if (galleryPhotos.length > 0) {
         console.log('Sample gallery photo URI:', galleryPhotos[0].source);
       }
@@ -95,7 +163,7 @@ export default function PhotosScreen() {
     if (selectedTab === 'gallery') {
       return photos.filter(p => p.sourceType === 'gallery' || p.sourceType === 'camera');
     } else if (selectedTab === 'public') {
-      return photos.filter(p => p.sourceType === 'public');
+      return photos.filter(p => p.sourceType === 'public' || p.sourceType === 'meme');
     } else {
       return photos.filter(p => p.isFavorite);
     }
@@ -109,30 +177,78 @@ export default function PhotosScreen() {
         return;
       }
     }
+    setCameraMode('default');
+    setCameraFacing('back'); // Default to back camera for regular photos
     setShowCamera(true);
   };
 
   const capturePhoto = async () => {
-    if (cameraRef.current) {
-      try {
-        const photo = await cameraRef.current.takePictureAsync();
-        if (photo) {
-          // Save to photos
-          const newPhoto: Photo = {
-            id: `camera-${Date.now()}`,
-            source: { uri: photo.uri },
-            sourceType: 'camera',
-            isFavorite: false,
-            timestamp: Date.now(),
-          };
-          
-          setPhotos(prev => [newPhoto, ...prev]);
-          setShowCamera(false);
-        }
-      } catch (error) {
-        console.error('Error taking photo:', error);
-        Alert.alert('Error', 'Failed to take photo');
+    if (!cameraRef.current) return;
+
+    try {
+      const photo = await cameraRef.current.takePictureAsync();
+      if (!photo) return;
+
+      if (cameraMode === 'find-me') {
+        // Handle Face Search
+        handleFindMe(photo.uri);
+      } else {
+        // Handle Normal Photo logic
+        const newPhoto: Photo = {
+          id: `camera-${Date.now()}`,
+          source: { uri: photo.uri },
+          sourceType: 'camera',
+          isFavorite: false,
+          timestamp: Date.now(),
+        };
+        
+        setPhotos(prev => [newPhoto, ...prev]);
+        setShowCamera(false);
       }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const startFindMe = async () => {
+    if (!permission) {
+      await requestPermission();
+    }
+    if (!permission?.granted) {
+      const { granted } = await requestPermission();
+      if (!granted) {
+        Alert.alert('Permission needed', 'Camera permission is required');
+        return;
+      }
+    }
+    setCameraMode('find-me');
+    setCameraFacing('front'); // Use front camera for selfies
+    setShowCamera(true);
+  };
+
+  const handleFindMe = async (uri: string) => {
+    setIsSearching(true);
+    try {
+      const result = await api.findMe(uri);
+      
+      if (result.matches.length > 0) {
+        setMatchedIds(result.matches);
+        setShowCamera(false);
+        Alert.alert('Found You!', `We found ${result.matches.length} photos matching your face.`);
+        // Filter photos to show only matches - you can implement this filtering logic
+        // For now, we'll just show the alert
+      } else {
+        Alert.alert('No Matches', 'Could not find any photos matching your face.');
+        setShowCamera(false); 
+      }
+    } catch (error) {
+      console.error('Face recognition error:', error);
+      Alert.alert('Error', 'Face recognition server is offline or unreachable.');
+      setShowCamera(false);
+    } finally {
+      setIsSearching(false);
+      setCameraMode('default');
     }
   };
 
@@ -152,7 +268,7 @@ export default function PhotosScreen() {
     );
   };
 
-  const deletePhoto = (photoId: string) => {
+  const deletePhoto = async (photoId: string) => {
     Alert.alert(
       'Delete Photo',
       'Are you sure you want to delete this photo?',
@@ -161,7 +277,19 @@ export default function PhotosScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            const photoToDelete = photos.find(p => p.id === photoId);
+            
+            // If it's a meme, delete it from storage
+            if (photoToDelete?.sourceType === 'meme') {
+              // Extract meme ID from photo ID (format: "meme-{id}")
+              const memeId = parseInt(photoId.replace('meme-', ''), 10);
+              if (!isNaN(memeId)) {
+                await deleteMeme(memeId);
+              }
+            }
+            
+            // Remove from photos state
             setPhotos(prev => prev.filter(p => p.id !== photoId));
             if (selectedPhoto?.id === photoId) {
               setSelectedPhoto(null);
@@ -171,6 +299,169 @@ export default function PhotosScreen() {
       ]
     );
   };
+
+  // Navigate to next/previous photo
+  const navigateToPhoto = useCallback((direction: 'prev' | 'next') => {
+    if (!selectedPhoto) return;
+    
+    const filtered = getFilteredPhotos();
+    if (filtered.length === 0) return;
+    
+    const currentIndex = filtered.findIndex(p => p.id === selectedPhoto.id);
+    if (currentIndex === -1) return;
+    
+    let newIndex: number;
+    if (direction === 'next') {
+      newIndex = currentIndex < filtered.length - 1 ? currentIndex + 1 : 0;
+    } else {
+      newIndex = currentIndex > 0 ? currentIndex - 1 : filtered.length - 1;
+    }
+    
+    setSelectedPhoto(filtered[newIndex]);
+    // Reset pan position
+    pan.setValue({ x: 0, y: 0 });
+  }, [selectedPhoto, photos, selectedTab]);
+
+  // Handle double tap to toggle favorite with animation
+  const handleDoubleTap = useCallback((event: any) => {
+    if (!selectedPhoto) return;
+    
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    
+    if (lastTap.current && (now - lastTap.current) < DOUBLE_TAP_DELAY) {
+      // Get tap location relative to the TouchableOpacity
+      const { locationX, locationY } = event.nativeEvent;
+      
+      // Set heart position (relative to the TouchableOpacity container)
+      setHeartAnimation({
+        visible: true,
+        x: locationX,
+        y: locationY,
+      });
+      
+      // Reset animation values
+      heartScale.setValue(0);
+      heartOpacity.setValue(1);
+      
+      // Animate heart: scale up then fade out (Instagram-like)
+      Animated.parallel([
+        Animated.sequence([
+          Animated.spring(heartScale, {
+            toValue: 1.3,
+            tension: 50,
+            friction: 3,
+            useNativeDriver: true,
+          }),
+          Animated.spring(heartScale, {
+            toValue: 1,
+            tension: 50,
+            friction: 3,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(150),
+          Animated.timing(heartOpacity, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start(() => {
+        setHeartAnimation({ visible: false, x: 0, y: 0 });
+        heartScale.setValue(0);
+        heartOpacity.setValue(0);
+      });
+      
+      toggleFavorite(selectedPhoto.id);
+      lastTap.current = 0;
+    } else {
+      lastTap.current = now;
+    }
+  }, [selectedPhoto]);
+
+  // Create PanResponder for swipe gestures
+  useEffect(() => {
+    panResponderRef.current = PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only respond to significant movements
+        return Math.abs(gestureState.dx) > 10 || Math.abs(gestureState.dy) > 10;
+      },
+      onPanResponderGrant: () => {
+        pan.setOffset({
+          x: (pan.x as any)._value || 0,
+          y: (pan.y as any)._value || 0,
+        });
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: pan.x, dy: pan.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: (_, gestureState) => {
+        pan.flattenOffset();
+        
+        const { dx, dy, vx, vy } = gestureState;
+        const SWIPE_THRESHOLD = 50;
+        const VELOCITY_THRESHOLD = 0.5;
+        const screenHeight = Dimensions.get('window').height;
+        
+        // Swipe down to close (prioritize vertical swipe)
+        if (Math.abs(dy) > Math.abs(dx) && (dy > SWIPE_THRESHOLD || (dy > 30 && vy > VELOCITY_THRESHOLD))) {
+          Animated.timing(pan, {
+            toValue: { x: 0, y: screenHeight },
+            duration: 200,
+            useNativeDriver: false,
+          }).start(() => {
+            setSelectedPhoto(null);
+            pan.setValue({ x: 0, y: 0 });
+          });
+          return;
+        }
+        
+        // Swipe left (next photo)
+        if (dx < -SWIPE_THRESHOLD || (dx < -30 && vx < -VELOCITY_THRESHOLD)) {
+          navigateToPhoto('next');
+          Animated.spring(pan, {
+            toValue: { x: 0, y: 0 },
+            useNativeDriver: false,
+            tension: 50,
+            friction: 7,
+          }).start();
+          return;
+        }
+        
+        // Swipe right (prev photo)
+        if (dx > SWIPE_THRESHOLD || (dx > 30 && vx > VELOCITY_THRESHOLD)) {
+          navigateToPhoto('prev');
+          Animated.spring(pan, {
+            toValue: { x: 0, y: 0 },
+            useNativeDriver: false,
+            tension: 50,
+            friction: 7,
+          }).start();
+          return;
+        }
+        
+        // Reset position if no significant swipe
+        Animated.spring(pan, {
+          toValue: { x: 0, y: 0 },
+          useNativeDriver: false,
+          tension: 50,
+          friction: 7,
+        }).start();
+      },
+    });
+  }, [navigateToPhoto]);
+
+  // Reset pan when photo changes
+  useEffect(() => {
+    if (selectedPhoto) {
+      pan.setValue({ x: 0, y: 0 });
+    }
+  }, [selectedPhoto]);
 
   const filteredPhotos = getFilteredPhotos();
 
@@ -227,16 +518,16 @@ export default function PhotosScreen() {
   const photoRows = getPhotoRows();
 
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <ThemedView style={commonStyles.container}>
+      <SafeAreaView edges={['top']} style={commonStyles.safeArea}>
         {/* Header */}
-        <View style={styles.header}>
-          <ThemedText style={styles.headerTitle}>Photos</ThemedText>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerButton}>
+        <View style={commonStyles.header}>
+          <ThemedText style={commonStyles.headerTitle}>Photos</ThemedText>
+          <View style={commonStyles.headerActions}>
+            <TouchableOpacity style={commonStyles.headerButton}>
               <IconSymbol size={24} name="magnifyingglass" color={BrandColors.blueAccent} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton}>
+            <TouchableOpacity style={commonStyles.headerButton}>
               <IconSymbol size={24} name="ellipsis.circle" color={BrandColors.blueAccent} />
             </TouchableOpacity>
           </View>
@@ -244,13 +535,13 @@ export default function PhotosScreen() {
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.actionButton} onPress={takePhoto}>
+          <TouchableOpacity style={commonStyles.actionButton} onPress={takePhoto}>
             <IconSymbol size={28} name="camera.fill" color={BrandColors.white} />
-            <ThemedText style={styles.actionButtonText}>Take Photo</ThemedText>
+            <ThemedText style={commonStyles.actionButtonText}>Take Photo</ThemedText>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
+          <TouchableOpacity style={commonStyles.actionButton} onPress={startFindMe}>
             <IconSymbol size={28} name="person.crop.circle.badge.checkmark" color={BrandColors.white} />
-            <ThemedText style={styles.actionButtonText}>Find Me</ThemedText>
+            <ThemedText style={commonStyles.actionButtonText}>Find Me</ThemedText>
           </TouchableOpacity>
         </View>
 
@@ -438,15 +729,20 @@ export default function PhotosScreen() {
         >
           {selectedPhoto && (
             <View style={styles.modalContainer}>
-              <SafeAreaView style={styles.modalSafeArea}>
-                <View style={styles.modalHeader}>
-                  <TouchableOpacity onPress={() => setSelectedPhoto(null)}>
+              <SafeAreaView edges={['top']} style={styles.modalSafeArea}>
+                <View style={commonStyles.modalHeader}>
+                  <TouchableOpacity 
+                    onPress={() => setSelectedPhoto(null)} 
+                    style={commonStyles.modalCloseButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
                     <IconSymbol size={24} name="xmark" color={BrandColors.white} />
                   </TouchableOpacity>
-                  <View style={styles.modalActions}>
+                  <View style={commonStyles.modalActions}>
                     <TouchableOpacity
                       onPress={() => toggleFavorite(selectedPhoto.id)}
-                      style={styles.modalActionButton}
+                      style={commonStyles.modalActionButton}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                       <IconSymbol
                         size={24}
@@ -454,28 +750,79 @@ export default function PhotosScreen() {
                         color={selectedPhoto.isFavorite ? BrandColors.blueAccent : BrandColors.white}
                       />
                     </TouchableOpacity>
-                    {selectedPhoto.sourceType === 'camera' && (
-                      <TouchableOpacity
-                        onPress={() => deletePhoto(selectedPhoto.id)}
-                        style={styles.modalActionButton}
-                      >
-                        <IconSymbol size={24} name="trash" color={BrandColors.white} />
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity
+                      onPress={() => deletePhoto(selectedPhoto.id)}
+                      style={commonStyles.modalActionButton}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <IconSymbol size={24} name="trash" color={BrandColors.white} />
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <View style={styles.modalImageContainer}>
-                  <ExpoImage
-                    source={selectedPhoto.source}
-                    style={styles.modalImage}
-                    contentFit="contain"
-                  />
-                  {selectedPhoto.sourceType === 'camera' && (
-                    <View style={styles.modalWatermark}>
-                      <ThemedText style={styles.modalWatermarkText}>HackaTUM</ThemedText>
-                    </View>
-                  )}
-                </View>
+                <Animated.View 
+                  style={[
+                    styles.modalImageContainer,
+                    {
+                      transform: [
+                        { translateX: pan.x },
+                        { translateY: pan.y },
+                      ],
+                      opacity: pan.y.interpolate({
+                        inputRange: [0, Dimensions.get('window').height / 2],
+                        outputRange: [1, 0.3],
+                        extrapolate: 'clamp',
+                      }),
+                    },
+                  ]}
+                  {...(panResponderRef.current?.panHandlers || {})}
+                >
+                  <TouchableOpacity
+                    activeOpacity={1}
+                    onPress={handleDoubleTap}
+                    style={styles.modalImageTouchable}
+                    onLayout={(event) => {
+                      const { x, y, width, height } = event.nativeEvent.layout;
+                      imageContainerLayout.current = { x, y, width, height };
+                    }}
+                  >
+                    <ExpoImage
+                      source={selectedPhoto.source}
+                      style={styles.modalImage}
+                      contentFit="contain"
+                    />
+                    {selectedPhoto.sourceType === 'camera' && (
+                      <View style={styles.modalWatermark}>
+                        <ThemedText style={styles.modalWatermarkText}>HackaTUM</ThemedText>
+                      </View>
+                    )}
+                    
+                    {/* Instagram-like heart animation */}
+                    {heartAnimation.visible && (
+                      <Animated.View
+                        style={[
+                          styles.heartAnimation,
+                          {
+                            left: heartAnimation.x,
+                            top: heartAnimation.y,
+                            transform: [
+                              { scale: heartScale },
+                              { translateX: -30 }, // Center the heart (60px width / 2)
+                              { translateY: -30 }, // Center the heart (60px height / 2)
+                            ],
+                            opacity: heartOpacity,
+                          },
+                        ]}
+                        pointerEvents="none"
+                      >
+                        <IconSymbol 
+                          size={60} 
+                          name="heart.fill" 
+                          color={BrandColors.blueAccent} 
+                        />
+                      </Animated.View>
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
               </SafeAreaView>
             </View>
           )}
@@ -485,7 +832,11 @@ export default function PhotosScreen() {
         <Modal
           visible={showCamera}
           animationType="slide"
-          onRequestClose={() => setShowCamera(false)}
+          onRequestClose={() => {
+            setShowCamera(false);
+            setCameraMode('default');
+            setIsSearching(false);
+          }}
         >
           <View style={styles.cameraContainer}>
             <CameraView
@@ -496,25 +847,42 @@ export default function PhotosScreen() {
               <View style={styles.cameraControls}>
                 <TouchableOpacity
                   style={styles.cameraButton}
-                  onPress={() => setShowCamera(false)}
+                  onPress={() => {
+                    setShowCamera(false);
+                    setCameraMode('default');
+                    setIsSearching(false);
+                  }}
                 >
                   <IconSymbol size={32} name="xmark.circle.fill" color={BrandColors.white} />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.captureButton}
-                  onPress={capturePhoto}
-                >
-                  <View style={styles.captureButtonInner} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.cameraButton}
-                  onPress={() => setCameraFacing(cameraFacing === 'back' ? 'front' : 'back')}
-                >
-                  <IconSymbol size={32} name="arrow.triangle.2.circlepath.camera.fill" color={BrandColors.white} />
-                </TouchableOpacity>
+                {isSearching ? (
+                  <View style={styles.captureButton}>
+                    <ActivityIndicator size="large" color={BrandColors.white} />
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.captureButton}
+                    onPress={capturePhoto}
+                  >
+                    <View style={styles.captureButtonInner} />
+                  </TouchableOpacity>
+                )}
+                {cameraMode === 'default' && (
+                  <TouchableOpacity
+                    style={styles.cameraButton}
+                    onPress={() => setCameraFacing(cameraFacing === 'back' ? 'front' : 'back')}
+                  >
+                    <IconSymbol size={32} name="arrow.triangle.2.circlepath.camera.fill" color={BrandColors.white} />
+                  </TouchableOpacity>
+                )}
+                {cameraMode === 'find-me' && (
+                  <View style={styles.cameraButton} />
+                )}
               </View>
               <View style={styles.cameraWatermarkPreview}>
-                <ThemedText style={styles.cameraWatermarkText}>HackaTUM</ThemedText>
+                <ThemedText style={styles.cameraWatermarkText}>
+                  {cameraMode === 'find-me' ? 'Take a selfie to find your photos' : 'HackaTUM'}
+                </ThemedText>
               </View>
             </CameraView>
           </View>
@@ -525,55 +893,11 @@ export default function PhotosScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BrandColors.darkBackground,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    fontFamily: 'Orbitron',
-    color: BrandColors.white,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  headerButton: {
-    padding: 8,
-  },
   actionButtons: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     marginBottom: 16,
     gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BrandColors.blueAccent,
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'Orbitron',
-    color: BrandColors.white,
   },
   tabs: {
     flexDirection: 'row',
@@ -608,7 +932,7 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingBottom: Platform.OS === 'ios' ? 120 : 90,
   },
   photoRow: {
     flexDirection: 'row',
@@ -660,18 +984,20 @@ const styles = StyleSheet.create({
   modalSafeArea: {
     flex: 1,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  modalImageTouchable: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 16,
+    position: 'relative',
   },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  modalActionButton: {
-    padding: 8,
+  heartAnimation: {
+    position: 'absolute',
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
   },
   modalImageContainer: {
     flex: 1,

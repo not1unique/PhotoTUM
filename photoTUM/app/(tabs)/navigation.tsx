@@ -3,7 +3,7 @@ import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { BrandColors, Colors } from '@/constants/theme';
 import { useState } from 'react';
-import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
@@ -190,7 +190,11 @@ export default function NavigationScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.content} 
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Building Information */}
           <View style={styles.buildingInfoContainer}>
             <ThemedText style={styles.sectionTitle}>Building Information</ThemedText>
@@ -329,6 +333,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontFamily: 'Orbitron',
     color: BrandColors.white,
+    minHeight: 32,
+    lineHeight: 40,
   },
   headerSubtitle: {
     fontSize: 14,
@@ -370,6 +376,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
+    paddingBottom: Platform.OS === 'ios' ? 120 : 90,
   },
   floorPlanContainer: {
     marginHorizontal: 20,

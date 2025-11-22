@@ -5,19 +5,20 @@ const path = require('path');
 const galleryDir = path.join(__dirname, '../assets/images_hackatum2024');
 const publicDir = path.join(__dirname, '../assets/images_hackatum2023');
 
-function getImageFiles(dir, maxFiles = 25) {
+function getImageFiles(dir) {
   try {
     const files = fs.readdirSync(dir)
-      .filter(f => f.endsWith('.jpg') || f.endsWith('.jpeg'))
-      .slice(0, maxFiles);
+      .filter(f => f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.png'))
+      .sort(); // Sort for consistent ordering
     return files;
   } catch (e) {
+    console.error(`Error reading directory ${dir}:`, e);
     return [];
   }
 }
 
-const galleryFiles = getImageFiles(galleryDir, 25);
-const publicFiles = getImageFiles(publicDir, 25);
+const galleryFiles = getImageFiles(galleryDir);
+const publicFiles = getImageFiles(publicDir);
 
 // Generate the imageLoader.ts file
 const imageLoaderContent = `// Image loader utility for HackaTUM photos
